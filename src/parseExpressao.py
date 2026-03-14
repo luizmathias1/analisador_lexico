@@ -21,9 +21,12 @@ def printEstado(state_name, char, lista, index, color):
 def printTokenConcluido(tokens):
     print(f"{GREEN}lista concluida -> tokens: {tokens}{RESET}")
 
+erroText = f"{RED}Erro: "
+
 # -- Execução principal --
 balance = 0
 def parseExpressao(linha):
+    print(f'\n-- Processing line "{linha}" --')
     global balance
     balance = 0
 
@@ -45,7 +48,6 @@ def parseExpressao(linha):
     return estadoFinal(tokens)
 
 def estadoInicial(char, lista, tokens, linha, index):
-
     # Função auxiliar usada para validar operadores
     def is_num(token):
         try:
@@ -79,13 +81,13 @@ def estadoInicial(char, lista, tokens, linha, index):
         if len(tokens) >= 2 and is_num(tokens[-1]) and is_num(tokens[-2]):
             return estadoOperador(char, lista, tokens, linha, index)
         else:
-            raise ValueError(f"Erro: operador '{char}'. Esperado dois números antes do operador na posição {index}")
+            raise ValueError(f"{erroText} operador '{char}'. Esperado dois números antes do operador na posição {index}{RESET}")
 
     # As letras formam os comandos especiais (RES) ou variveis de memória (MEM, X, Y)
     if char.isalpha():
         return estadoComando, char
 
-    raise ValueError(f"Erro: caractere desconhecido ou não esperado '{char}' na posição {index}")
+    raise ValueError(f"{erroText} caractere desconhecido ou não esperado '{char}' na posição {index}{RESET}")
 
 def estadoNumero(char, lista, tokens, linha, index):
     printEstado("estadoNumero", char, lista, index, CYAN)
@@ -96,7 +98,7 @@ def estadoNumero(char, lista, tokens, linha, index):
     # checar se é dois pontos seguidos, se não for chama a função recursivamente
     if char == '.':
         if '.' in lista:
-            raise ValueError(f"Erro: número malformado na posição {index} gerou múltiplos pontos inválidos (ex: {lista + char})")
+            raise ValueError(f"{erroText} número malformado na posição {index} gerou múltiplos pontos inválidos (ex: {lista + char}){RESET}")
         else:
             return estadoNumero, lista + char
     
@@ -106,7 +108,7 @@ def estadoNumero(char, lista, tokens, linha, index):
 
     # Verificação de segurança: evita salvar lixo como número
     if lista == '-' or lista == '.':
-        raise ValueError(f"Erro: sequência inválida tentando formar número falhou, sobrando apenas um: '{lista}'")
+        raise ValueError(f"{erroText} sequência inválida tentando formar número falhou, sobrando apenas um: '{lista}'{RESET}")
     
     
         
@@ -130,7 +132,6 @@ def estadoComando(char, lista, tokens, linha, index):
             return estadoInicial(char, "", tokens, linha, index)
 
 def estadoOperador(char, lista, tokens, linha, index):
-
     printEstado("estadoOperador", char, lista, index, YELLOW)
     # Checar divisão inteira
     if lista == '/':
@@ -155,24 +156,22 @@ def estadoOperador(char, lista, tokens, linha, index):
             printTokenConcluido(tokens)
             return estadoInicial, ""
 
-    raise ValueError(f"Erro: erro lendo '{char}' ou lista '{lista}' indexado em {index}")
+    raise ValueError(f"{erroText} erro lendo '{char}' ou lista '{lista}' indexado em {index}{RESET}")
 
 def estadoParenteses(char, tokens):
     global balance
-    if char == '(':
-        balance += 1
-    elif char == ')': 
-        balance -= 1
-        if balance != 0:
-            raise ValueError("Erro: parênteses mal balanceados")
+    if char == '(': balance += 1
+    elif char == ')': balance -= 1
        
     tokens.append(char)
+    printTokenConcluido(tokens)
     return estadoInicial, ""
 
 def estadoFinal(tokens):
-    if not tokens:
-        raise ValueError("Erro: expressão vazia ou malformada, nenhum token reconhecido")
+    if not tokens: raise ValueError(f"{erroText} expressão vazia ou malformada, nenhum token reconhecido{RESET}")
+    
+    global balance
+    if balance != 0: raise ValueError(f"{erroText} parênteses mal balanceados{RESET}")
 
     print('Gerando JSON dos tokens...')
-
     return tokens
