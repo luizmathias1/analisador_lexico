@@ -22,8 +22,11 @@ def printTokenConcluido(tokens):
     print(f"{GREEN}lista concluida -> tokens: {tokens}{RESET}")
 
 # -- Execução principal --
-
+balance = 0
 def parseExpressao(linha):
+    global balance
+    balance = 0
+
     tokens = []
     if not isinstance(linha, str): raise TypeError("parseExpressao espera uma string como 'linha'")
 
@@ -42,12 +45,21 @@ def parseExpressao(linha):
     return estadoFinal(tokens)
 
 def estadoInicial(char, lista, tokens, linha, index):
+
+    # Função auxiliar usada para validar operadores
+    def is_num(token):
+        try:
+            float(token)
+            return True
+        except:
+            return False
+
     printEstado("estadoInicial", char, lista, index, BLUE)
     if char.isspace(): 
         return estadoInicial, ""
 
-    if char in "()":
-        return estadoParenteses(char, lista, tokens, linha, index)
+    if char == '(' or char == ')':
+        return estadoParenteses(char, tokens)
 
     # Quando ponto, estadoNúmero que irá validar caracter
     if char.isdigit() or char == '.':
@@ -62,9 +74,12 @@ def estadoInicial(char, lista, tokens, linha, index):
         else:
             return estadoOperador(char, lista, tokens, linha, index)
 
-    # Tratamento de operadores
+    # Tratamento de operadores. É esperado ter dois números antes do operador.
     if char in "+*/^%":
-        return estadoOperador(char, lista, tokens, linha, index)
+        if len(tokens) >= 2 and is_num(tokens[-1]) and is_num(tokens[-2]):
+            return estadoOperador(char, lista, tokens, linha, index)
+        else:
+            raise ValueError(f"Erro: operador '{char}'. Esperado dois números antes do operador na posição {index}")
 
     # As letras formam os comandos especiais (RES) ou variveis de memória (MEM, X, Y)
     if char.isalpha():
@@ -92,6 +107,8 @@ def estadoNumero(char, lista, tokens, linha, index):
     # Verificação de segurança: evita salvar lixo como número
     if lista == '-' or lista == '.':
         raise ValueError(f"Erro: sequência inválida tentando formar número falhou, sobrando apenas um: '{lista}'")
+    
+    
         
     # Salvar o número completo na lista de tokens, já que o próximo char não é mais parte do número
     tokens.append(lista)
@@ -113,6 +130,7 @@ def estadoComando(char, lista, tokens, linha, index):
             return estadoInicial(char, "", tokens, linha, index)
 
 def estadoOperador(char, lista, tokens, linha, index):
+
     printEstado("estadoOperador", char, lista, index, YELLOW)
     # Checar divisão inteira
     if lista == '/':
@@ -139,16 +157,16 @@ def estadoOperador(char, lista, tokens, linha, index):
 
     raise ValueError(f"Erro: erro lendo '{char}' ou lista '{lista}' indexado em {index}")
 
-#URGENTE  Refatorar estadoParenteses não está funcionando corretamente
-#exemplo: (( sem ser fechado 
-def estadoParenteses(char, lista, tokens, linha, index):
-    printEstado("estadoParenteses", char, lista, index, WHITE)
-    
-    # Pega direto ele sem avaliar lista e guarda nas listas do token!
+def estadoParenteses(char, tokens):
+    global balance
+    if char == '(':
+        balance += 1
+    elif char == ')': 
+        balance -= 1
+        if balance != 0:
+            raise ValueError("Erro: parênteses mal balanceados")
+       
     tokens.append(char)
-    printTokenConcluido(tokens)
-    
-    # E limpa o estado de comando em branco voltando tudo a normalidade.
     return estadoInicial, ""
 
 def estadoFinal(tokens):
