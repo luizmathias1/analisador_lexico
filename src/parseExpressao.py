@@ -5,6 +5,9 @@
 # salva o token "1.0", volta pro estado inicial, recebe o +, reconhece como operador e salva o token "+", volta pro estado inicial 
 # e termina a leitura da linha.
 
+import json
+import os
+
 # -- Informações para Debug --
 RESET = "\033[0m"
 RED = "\033[31m"
@@ -14,6 +17,7 @@ BLUE = "\033[34m"
 MAGENTA = "\033[35m"
 CYAN = "\033[36m"
 WHITE = "\033[37m"
+erroText = f"{RED}Erro:"
 
 def printEstado(state_name, char, lista, index, color):
     print(f"{color}[{state_name}] index={index} char={repr(char)} lista={repr(lista)}{RESET}")
@@ -21,9 +25,40 @@ def printEstado(state_name, char, lista, index, color):
 def printTokenConcluido(tokens):
     print(f"{GREEN}lista concluida -> tokens: {tokens}{RESET}")
 
+def addJson(linha, tokens):
+    output_path = os.path.join("results", "tokens.json")
+
+    # ler JSON existente
+    data = {"entries": []}
+    if os.path.exists(output_path):
+        with open(output_path, "r", encoding="utf-8") as f:
+            try:
+                content = json.load(f)
+                if isinstance(content, dict) and "entries" in content:
+                    data = content
+                else:
+                    data = {"entries": []}
+            except json.JSONDecodeError:
+                data = {"entries": []}
+
+    # adicionar token na lista
+    data["entries"].append({"line": linha, "tokens": tokens})
+
+    # adicionar tudo no json
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 # -- Execução principal --
+balance = 0 # Usado para fazer balanceamento de parênteses, incrementa para '(' e decrementa para ')'
+
+# Validar se operadores tem operandos suficientes, caso ((3 4 +) (2 1 -) *), cada resultado se torna um operando para *
+qnt_operandos = 0 
 
 def parseExpressao(linha):
+    print(f'\n-- Processing line "{linha}"')
+    global balance, qnt_operandos
+    balance, qnt_operandos = 0, 0
+
     tokens = []
     if not isinstance(linha, str): raise TypeError("parseExpressao espera uma string como 'linha'")
 
@@ -39,15 +74,23 @@ def parseExpressao(linha):
         estado, lista = estado(char, lista, tokens, linha, index)
         index += 1
 
-    return estadoFinal(tokens)
+    return estadoFinal(tokens, linha)
 
 def estadoInicial(char, lista, tokens, linha, index):
+    # Função auxiliar usada para validar operadores
+    def is_num(token):
+        try:
+            float(token)
+            return True
+        except:
+            return False
+        
     printEstado("estadoInicial", char, lista, index, BLUE)
     if char.isspace(): 
         return estadoInicial, ""
 
-    if char in "()":
-        return estadoParenteses(char, lista, tokens, linha, index)
+    if char == '(' or char == ')':
+        return estadoParenteses(char, tokens)
 
     # Quando ponto, estadoNúmero que irá validar caracter
     if char.isdigit() or char == '.':
@@ -62,15 +105,19 @@ def estadoInicial(char, lista, tokens, linha, index):
         else:
             return estadoOperador(char, lista, tokens, linha, index)
 
-    # Tratamento de operadores
+    # Tratamento de operadores. É esperado ter dois operandos antes do operador.
     if char in "+*/^%":
-        return estadoOperador(char, lista, tokens, linha, index)
+        global qnt_operandos
+        if qnt_operandos >= 2:
+            return estadoOperador(char, lista, tokens, linha, index)
+        else:
+            raise ValueError(f"{erroText} operador '{char}'. Esperado dois operandos antes do operador na posição {index}{RESET}")
 
     # As letras formam os comandos especiais (RES) ou variveis de memória (MEM, X, Y)
     if char.isalpha():
         return estadoComando, char
 
-    raise ValueError(f"Erro: caractere desconhecido ou não esperado '{char}' na posição {index}")
+    raise ValueError(f"{erroText} caractere desconhecido ou não esperado '{char}' na posição {index}{RESET}")
 
 def estadoNumero(char, lista, tokens, linha, index):
     printEstado("estadoNumero", char, lista, index, CYAN)
@@ -81,7 +128,7 @@ def estadoNumero(char, lista, tokens, linha, index):
     # checar se é dois pontos seguidos, se não for chama a função recursivamente
     if char == '.':
         if '.' in lista:
-            raise ValueError(f"Erro: número malformado na posição {index} gerou múltiplos pontos inválidos (ex: {lista + char})")
+            raise ValueError(f"{erroText} número malformado na posição {index} gerou múltiplos pontos inválidos (ex: {lista + char}){RESET}")
         else:
             return estadoNumero, lista + char
     
@@ -91,11 +138,14 @@ def estadoNumero(char, lista, tokens, linha, index):
 
     # Verificação de segurança: evita salvar lixo como número
     if lista == '-' or lista == '.':
-        raise ValueError(f"Erro: sequência inválida tentando formar número falhou, sobrando apenas um: '{lista}'")
+        raise ValueError(f"{erroText} sequência inválida tentando formar número falhou, sobrando apenas um: '{lista}'{RESET}")
         
     # Salvar o número completo na lista de tokens, já que o próximo char não é mais parte do número
     tokens.append(lista)
     printTokenConcluido(tokens)
+
+    global qnt_operandos
+    qnt_operandos += 1 # Números sao operandos
     
     # Repassa o caractere atual pro estado inicial, assim comecando uma nova lista
     return estadoInicial(char, "", tokens, linha, index)
@@ -114,6 +164,8 @@ def estadoComando(char, lista, tokens, linha, index):
 
 def estadoOperador(char, lista, tokens, linha, index):
     printEstado("estadoOperador", char, lista, index, YELLOW)
+    global qnt_operandos
+
     # Checar divisão inteira
     if lista == '/':
         if char == '/':
@@ -135,26 +187,32 @@ def estadoOperador(char, lista, tokens, linha, index):
         if char in "+-*^%":
             tokens.append(char)
             printTokenConcluido(tokens)
+
+            # Operador consome 2 operandos e gera 1 resultado, então decrementa 1 do total de operandos
+            qnt_operandos -= 1
+
             return estadoInicial, ""
 
-    raise ValueError(f"Erro: erro lendo '{char}' ou lista '{lista}' indexado em {index}")
+    raise ValueError(f"{erroText} erro lendo '{char}' ou lista '{lista}' indexado em {index}{RESET}")
 
-#URGENTE  Refatorar estadoParenteses não está funcionando corretamente
-#exemplo: (( sem ser fechado 
-def estadoParenteses(char, lista, tokens, linha, index):
-    printEstado("estadoParenteses", char, lista, index, WHITE)
-    
-    # Pega direto ele sem avaliar lista e guarda nas listas do token!
+def estadoParenteses(char, tokens):
+    if len(tokens) == 0 and char == ')':
+        raise ValueError(f"{erroText} parêntese de fechamento ')' no inicio da linha{RESET}")
+
+    global balance
+    if char == '(': balance += 1
+    elif char == ')': balance -= 1
+       
     tokens.append(char)
     printTokenConcluido(tokens)
-    
-    # E limpa o estado de comando em branco voltando tudo a normalidade.
     return estadoInicial, ""
 
-def estadoFinal(tokens):
-    if not tokens:
-        raise ValueError("Erro: expressão vazia ou malformada, nenhum token reconhecido")
+def estadoFinal(tokens, linha):
+    if not tokens: raise ValueError(f"{erroText} expressão vazia ou malformada, nenhum tokeIn reconhecido{RESET}")
+    
+    global balance
+    if balance != 0: raise ValueError(f"{erroText} parênteses mal balanceados{RESET}")
 
-    print('Gerando JSON dos tokens...')
-
+    print(f"{GREEN}Adicionando tokens ao JSON...{RESET}")
+    addJson(linha, tokens)
     return tokens
